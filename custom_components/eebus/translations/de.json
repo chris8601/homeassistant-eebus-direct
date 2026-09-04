@@ -1,0 +1,95 @@
+{
+  "title": "EEBUS Direct",
+  "config": {
+    "step": {
+      "user": {
+        "title": "EEBUS-Geräte suchen",
+        "description": "Wähle die IPv4-Adresse des Home-Assistant-Hosts im selben LAN wie die Wallbox. Eine Bridge oder ein Add-on ist nicht erforderlich.",
+        "data": {"interface_ip": "LAN-Adresse von Home Assistant", "scan_seconds": "Suchdauer"},
+        "data_description": {
+          "interface_ip": "Zum Beispiel 192.168.1.20; dies ist nicht die Adresse der Wallbox.",
+          "scan_seconds": "So lange darf die mDNS-Suche laufen."
+        }
+      },
+      "select": {
+        "title": "EEBUS-Gerät auswählen",
+        "description": "Wähle die Wallbox aus, die gekoppelt werden soll.",
+        "data": {"service": "Gerät"}
+      },
+      "pair": {
+        "title": "EEBUS-Gerät koppeln",
+        "description": "Gerät: {device}\n\nLies den SKI in den EEBUS-Einstellungen der Wallbox ab und trage ihn unten ein. Aktiviere anschließend an der Wallbox den EEBUS-Kopplungsmodus. Home Assistant vergleicht den eingegebenen SKI mit dem TLS-Zertifikat der Wallbox.",
+        "data": {"peer_ski": "SKI der Wallbox"},
+        "data_description": {"peer_ski": "Genau 40 Hexadezimalzeichen; Leerzeichen, Doppelpunkte und Bindestriche sind erlaubt."}
+      }
+    },
+    "error": {
+      "cannot_connect": "Die EEBUS-/TLS-Verbindung ist fehlgeschlagen. Prüfe Kopplungsmodus, Netzwerk und SKI.",
+      "discovery_failed": "Die mDNS-Suche ist auf dieser Netzwerkschnittstelle fehlgeschlagen.",
+      "interface_required": "Eine gültige IPv4-LAN-Adresse ist erforderlich.",
+      "invalid_ski": "Trage den vollständigen Wallbox-SKI mit genau 40 Hexadezimalzeichen ein.",
+      "no_devices_found": "Kein EEBUS-SHIP-Gerät wurde gefunden. Aktiviere EEBUS bzw. den Kopplungsmodus der Wallbox und versuche es erneut.",
+      "pairing_not_approved": "Die Wallbox hat die Verbindung nicht innerhalb von drei Minuten angenommen. Prüfe ihren EEBUS-Kopplungsmodus.",
+      "ski_mismatch": "Der eingegebene SKI stimmt nicht mit dem TLS-Zertifikat der Wallbox überein."
+    },
+    "progress": {
+      "wait_for_pairing": "Verbindung zu {device} mit dem Wallbox-SKI {peer_ski} wird hergestellt. Lasse den EEBUS-Kopplungsmodus der Wallbox aktiviert."
+    },
+    "abort": {
+      "already_configured": "Dieses EEBUS-Gerät ist bereits eingerichtet.",
+      "invalid_discovery_info": "Der gefundene SHIP-Dienst enthält keinen verwendbaren Port.",
+      "interface_required": "Die LAN-Schnittstelle von Home Assistant konnte nicht ermittelt werden."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EEBUS-Verbindungseinstellungen",
+        "data": {"interface_ip": "LAN-Adresse von Home Assistant", "update_interval": "Aktualisierungsintervall"}
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {"name": "Ladestatus", "state": {"idle": "Bereit ohne Fahrzeug", "ready": "Ladebereit", "charging": "Lädt", "fault": "Störung"}},
+      "power": {"name": "Ladeleistung"},
+      "session_energy": {"name": "Energie Ladevorgang"},
+      "total_energy": {"name": "Energie gesamt"},
+      "current": {"name": "Ladestrom"},
+      "current_a": {"name": "Strom L1"},
+      "current_b": {"name": "Strom L2"},
+      "current_c": {"name": "Strom L3"},
+      "voltage_a": {"name": "Spannung L1"},
+      "voltage_b": {"name": "Spannung L2"},
+      "voltage_c": {"name": "Spannung L3"},
+      "frequency": {"name": "Netzfrequenz"},
+      "soc": {"name": "Ladezustand Fahrzeug"},
+      "soh": {"name": "Batteriezustand Fahrzeug"},
+      "range": {"name": "Reichweite Fahrzeug"},
+      "applied_current": {"name": "Angewendete Stromgrenze"},
+      "operating_state": {"name": "EEBUS-Betriebszustand"},
+      "use_cases": {"name": "Unterstützte EEBUS-Anwendungsfälle"}
+    },
+    "binary_sensor": {
+      "connected": {"name": "EEBUS-Verbindung"},
+      "vehicle_connected": {"name": "Fahrzeug verbunden"},
+      "charging": {"name": "Fahrzeug lädt"},
+      "fault": {"name": "Wallbox-Störung"}
+    },
+    "number": {
+      "current_limit": {"name": "Maximaler Ladestrom"},
+      "current_limit_a": {"name": "Maximaler Ladestrom L1"},
+      "current_limit_b": {"name": "Maximaler Ladestrom L2"},
+      "current_limit_c": {"name": "Maximaler Ladestrom L3"},
+      "solar_current": {"name": "PV-Stromempfehlung"}
+    },
+    "switch": {
+      "charging_enabled": {"name": "Laden freigegeben"},
+      "solar_recommendation": {"name": "PV-Stromempfehlung aktiv"}
+    },
+    "button": {
+      "release_limits": {"name": "Alle Stromgrenzen freigeben"},
+      "reconnect": {"name": "EEBUS neu verbinden"}
+    }
+  }
+}

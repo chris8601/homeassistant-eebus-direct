@@ -1,0 +1,101 @@
+{
+  "title": "EEBUS Direct",
+  "config": {
+    "step": {
+      "user": {
+        "title": "EEBUS devices discover",
+        "description": "Select the IPv4 address of the Home Assistant host in the same LAN as the wallbox. No bridge or add-on is required.",
+        "data": {
+          "interface_ip": "Home Assistant LAN address",
+          "scan_seconds": "Discovery time"
+        },
+        "data_description": {
+          "interface_ip": "For example 192.168.1.20; this is not the wallbox address.",
+          "scan_seconds": "How long mDNS discovery is allowed to run."
+        }
+      },
+      "select": {
+        "title": "Select EEBUS device",
+        "description": "Choose the wallbox that should be paired.",
+        "data": {"service": "Device"}
+      },
+      "pair": {
+        "title": "Pair EEBUS device",
+        "description": "Device: {device}\n\nRead the SKI from the EEBUS settings of the wallbox and enter it below. Then enable EEBUS pairing on the wallbox. Home Assistant verifies this SKI against the wallbox TLS certificate.",
+        "data": {"peer_ski": "Wallbox SKI"},
+        "data_description": {"peer_ski": "Exactly 40 hexadecimal characters; spaces, colons and hyphens are allowed."}
+      }
+    },
+    "error": {
+      "cannot_connect": "The EEBUS/TLS connection failed. Check pairing mode, network and SKI.",
+      "discovery_failed": "mDNS discovery failed on this network interface.",
+      "interface_required": "A valid IPv4 LAN address is required.",
+      "invalid_ski": "Enter the complete wallbox SKI with exactly 40 hexadecimal characters.",
+      "no_devices_found": "No EEBUS SHIP device was found. Activate EEBUS/pairing on the wallbox and try again.",
+      "pairing_not_approved": "The wallbox did not accept the connection within three minutes. Check its EEBUS pairing mode.",
+      "ski_mismatch": "The entered SKI does not match the TLS certificate presented by the wallbox."
+    },
+    "progress": {
+      "wait_for_pairing": "Connecting to {device} with wallbox SKI {peer_ski}. Keep the EEBUS pairing mode enabled on the wallbox."
+    },
+    "abort": {
+      "already_configured": "This EEBUS device is already configured.",
+      "invalid_discovery_info": "The discovered SHIP service contains no usable port.",
+      "interface_required": "The Home Assistant LAN interface could not be determined."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EEBUS connection settings",
+        "data": {
+          "interface_ip": "Home Assistant LAN address",
+          "update_interval": "Update interval"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {"name": "Charging status", "state": {"idle": "Idle", "ready": "Ready", "charging": "Charging", "fault": "Fault"}},
+      "power": {"name": "Charging power"},
+      "session_energy": {"name": "Session energy"},
+      "total_energy": {"name": "Total energy"},
+      "current": {"name": "Charging current"},
+      "current_a": {"name": "Current L1"},
+      "current_b": {"name": "Current L2"},
+      "current_c": {"name": "Current L3"},
+      "voltage_a": {"name": "Voltage L1"},
+      "voltage_b": {"name": "Voltage L2"},
+      "voltage_c": {"name": "Voltage L3"},
+      "frequency": {"name": "Grid frequency"},
+      "soc": {"name": "Vehicle state of charge"},
+      "soh": {"name": "Vehicle state of health"},
+      "range": {"name": "Vehicle range"},
+      "applied_current": {"name": "Applied current limit"},
+      "operating_state": {"name": "EEBUS operating state"},
+      "use_cases": {"name": "Supported EEBUS use cases"}
+    },
+    "binary_sensor": {
+      "connected": {"name": "EEBUS connection"},
+      "vehicle_connected": {"name": "Vehicle connected"},
+      "charging": {"name": "Vehicle charging"},
+      "fault": {"name": "Wallbox fault"}
+    },
+    "number": {
+      "current_limit": {"name": "Maximum charging current"},
+      "current_limit_a": {"name": "Maximum charging current L1"},
+      "current_limit_b": {"name": "Maximum charging current L2"},
+      "current_limit_c": {"name": "Maximum charging current L3"},
+      "solar_current": {"name": "PV current recommendation"}
+    },
+    "switch": {
+      "charging_enabled": {"name": "Charging enabled"},
+      "solar_recommendation": {"name": "PV current recommendation active"}
+    },
+    "button": {
+      "release_limits": {"name": "Release all current limits"},
+      "reconnect": {"name": "Reconnect EEBUS"}
+    }
+  }
+}

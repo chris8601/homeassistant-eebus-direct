@@ -1,0 +1,13 @@
+{
+  "domain": "eebus",
+  "name": "EEBUS Direct",
+  "codeowners": ["@chris8601"],
+  "config_flow": true,
+  "documentation": "https://github.com/chris8601/homeassistant-eebus-direct",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/chris8601/homeassistant-eebus-direct/issues",
+  "requirements": [],
+  "version": "0.1.0-beta.2",
+  "zeroconf": ["_ship._tcp.local."]
+}

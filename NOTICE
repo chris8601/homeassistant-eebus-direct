@@ -1,0 +1,14 @@
+EEBUS Direct for Home Assistant
+Copyright 2026 EEBUS Direct contributors
+
+This product includes modified portions of eebus-sdk by ULudo:
+https://github.com/ULudo/eebus-sdk
+Licensed under the Apache License, Version 2.0.
+
+The embedded files are located below
+custom_components/eebus/_vendor/eebus_sdk/.
+
+Modifications include integration-local packaging, native certificate SKI
+handling, Home Assistant-compatible CEM discovery, EV charging use cases,
+standard SPINE function metadata, node-management capabilities, heartbeat
+handling, and command reply compatibility.
