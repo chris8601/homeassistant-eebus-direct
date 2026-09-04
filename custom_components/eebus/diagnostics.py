@@ -18,7 +18,9 @@ async def async_get_config_entry_diagnostics(
         "entry": {
             "title": entry.title,
             "unique_id": entry.unique_id,
-            "interface_ip": entry.data.get("interface_ip"),
+            "interface_ip": entry.options.get(
+                "interface_ip", entry.data.get("interface_ip")
+            ),
         },
         "peer": state.get("peer"),
         "capabilities": state.get("capabilities"),

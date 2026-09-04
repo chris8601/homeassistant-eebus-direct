@@ -98,7 +98,9 @@ class EebusRuntime:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
-        self.interface_ip = str(entry.data[CONF_INTERFACE_IP])
+        self.interface_ip = str(
+            entry.options.get(CONF_INTERFACE_IP, entry.data[CONF_INTERFACE_IP])
+        )
         self.peer_ski = str(entry.data[CONF_PEER_SKI]).lower()
         self.identity_path = str(entry.data[CONF_IDENTITY_PATH])
         self.service = service_from_dict(dict(entry.data[CONF_SERVICE]))

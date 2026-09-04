@@ -15,7 +15,6 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
-    OptionsFlowWithReload,
 )
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow
@@ -336,27 +335,24 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self.async_step_pair()
 
 
-class EebusOptionsFlow(OptionsFlowWithReload):
+class EebusOptionsFlow(OptionsFlow):
     """Configure refresh timing and the LAN interface."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            data = dict(self.config_entry.data)
-            data[CONF_INTERFACE_IP] = user_input[CONF_INTERFACE_IP]
-            self.hass.config_entries.async_update_entry(self.config_entry, data=data)
-            return self.async_create_entry(
-                title="",
-                data={CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL]},
-            )
+            return self.async_create_entry(title="", data=user_input)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(
                         CONF_INTERFACE_IP,
-                        default=self.config_entry.data.get(CONF_INTERFACE_IP, ""),
+                        default=self.config_entry.options.get(
+                            CONF_INTERFACE_IP,
+                            self.config_entry.data.get(CONF_INTERFACE_IP, ""),
+                        ),
                     ): _validate_interface,
                     vol.Required(
                         CONF_UPDATE_INTERVAL,

@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.3
+
+- 500-Fehler beim Laden des Konfigurationsflusses auf Home Assistant 2024.6 bis 2025.6 behoben
+- Abhängigkeit von der erst später eingeführten Klasse `OptionsFlowWithReload` entfernt
+- Änderungen an Schnittstelle und Aktualisierungsintervall laden die Integration nun über einen kompatiblen Update-Listener neu
+
 ## 0.1.0-beta.2
 
 - SKI-Kopplungsrichtung für die Hager Witty Flow korrigiert
