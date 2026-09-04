@@ -27,6 +27,7 @@
       "cannot_connect": "Die EEBUS-/TLS-Verbindung ist fehlgeschlagen. Prüfe Kopplungsmodus, Netzwerk und SKI.",
       "discovery_failed": "Die mDNS-Suche ist auf dieser Netzwerkschnittstelle fehlgeschlagen.",
       "interface_required": "Eine gültige IPv4-LAN-Adresse ist erforderlich.",
+      "invalid_interface": "Trage eine gültige IPv4-LAN-Adresse des Home-Assistant-Hosts ein.",
       "invalid_ski": "Trage den vollständigen Wallbox-SKI mit genau 40 Hexadezimalzeichen ein.",
       "no_devices_found": "Kein EEBUS-SHIP-Gerät wurde gefunden. Aktiviere EEBUS bzw. den Kopplungsmodus der Wallbox und versuche es erneut.",
       "pairing_not_approved": "Die Wallbox hat die Verbindung nicht innerhalb von drei Minuten angenommen. Prüfe ihren EEBUS-Kopplungsmodus.",
@@ -42,6 +43,9 @@
     }
   },
   "options": {
+    "error": {
+      "invalid_interface": "Trage eine gültige IPv4-LAN-Adresse des Home-Assistant-Hosts ein."
+    },
     "step": {
       "init": {
         "title": "EEBUS-Verbindungseinstellungen",

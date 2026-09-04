@@ -166,10 +166,14 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         if user_input is not None:
-            self._interface_ip = user_input.get(CONF_INTERFACE_IP) or suggested
-            if not self._interface_ip:
+            interface_value = str(user_input.get(CONF_INTERFACE_IP) or suggested)
+            try:
+                self._interface_ip = _validate_interface(interface_value)
+            except vol.Invalid:
+                errors[CONF_INTERFACE_IP] = "invalid_interface"
+            if not errors and not self._interface_ip:
                 errors["base"] = "interface_required"
-            else:
+            elif not errors:
                 try:
                     self._services = await self.hass.async_add_executor_job(
                         partial(
@@ -191,7 +195,7 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_INTERFACE_IP, default=suggested): _validate_interface,
+                vol.Required(CONF_INTERFACE_IP, default=suggested): str,
                 vol.Required(CONF_SCAN_SECONDS, default=DEFAULT_SCAN_SECONDS): vol.All(
                     vol.Coerce(int), vol.Range(min=2, max=15)
                 ),
@@ -341,8 +345,18 @@ class EebusOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            try:
+                interface_ip = _validate_interface(
+                    str(user_input.get(CONF_INTERFACE_IP, ""))
+                )
+            except vol.Invalid:
+                errors[CONF_INTERFACE_IP] = "invalid_interface"
+            else:
+                options = dict(user_input)
+                options[CONF_INTERFACE_IP] = interface_ip
+                return self.async_create_entry(title="", data=options)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -353,7 +367,7 @@ class EebusOptionsFlow(OptionsFlow):
                             CONF_INTERFACE_IP,
                             self.config_entry.data.get(CONF_INTERFACE_IP, ""),
                         ),
-                    ): _validate_interface,
+                    ): str,
                     vol.Required(
                         CONF_UPDATE_INTERVAL,
                         default=self.config_entry.options.get(
@@ -362,4 +376,5 @@ class EebusOptionsFlow(OptionsFlow):
                     ): vol.All(vol.Coerce(int), vol.Range(min=5, max=60)),
                 }
             ),
+            errors=errors,
         )

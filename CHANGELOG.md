@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.4
+
+- Schema-Serialisierungsfehler der Home-Assistant-Oberfläche unter Python 3.14 behoben
+- eigene IPv4-Prüffunktion aus dem UI-Schema entfernt und in die Verarbeitung der Benutzereingabe verschoben
+- verständliche Feldmeldung für ungültige IPv4-Adressen ergänzt
+
 ## 0.1.0-beta.3
 
 - 500-Fehler beim Laden des Konfigurationsflusses auf Home Assistant 2024.6 bis 2025.6 behoben

@@ -29,6 +29,15 @@ class HomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertIn("OptionsFlow", imported_names)
         self.assertNotIn("OptionsFlowWithReload", imported_names)
 
+    def test_config_flow_schema_contains_no_custom_ipv4_validator(self) -> None:
+        """The probatio UI serializer cannot encode arbitrary callables."""
+        source = ROOT.joinpath("custom_components/eebus/config_flow.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("): _validate_interface", source)
+        self.assertIn("): str", source)
+
 
 if __name__ == "__main__":
     unittest.main()
