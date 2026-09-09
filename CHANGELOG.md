@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.6
+
+- SPINE-Werte werden jetzt von allen relevanten EVSE- und EV-Features gelesen statt nur vom tiefsten EV-Feature
+- Binding und Subscriptions werden vor dem ersten Datenabruf eingerichtet; statische Daten werden bei anfänglichen Timeouts erneut gelesen
+- unbekannter Ladezustand wird nicht mehr fälschlich als „lädt nicht“ oder „ladebereit“ ausgegeben
+- Diagnose-Download enthält die rohe SPINE-Gerätebeschreibung sowie statische und dynamische Antworten für die Hardware-Analyse
+
 ## 0.1.0-beta.5
 
 - standardkonforme SHIP-Antwort auf `accessMethodsRequest` umgesetzt
