@@ -31,6 +31,8 @@ from .const import (
 )
 from .identity import load_identity
 from .model import (
+    charging_activity,
+    charging_status,
     decode_configuration,
     decode_diagnosis,
     decode_identification,
@@ -109,7 +111,9 @@ class EebusRuntime:
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._discovery: dict[str, Any] = {}
         self._static_signature: tuple[Any, ...] | None = None
+        self._static_attempts = 0
         self._static: dict[str, Any] = {}
+        self._dynamic: dict[str, Any] = {}
         self._target_current_a: float | None = None
         self._target_phase_a: dict[str, float] = {}
         self._solar_current_a: float | None = None
@@ -233,30 +237,38 @@ class EebusRuntime:
         *,
         entity: list[int] | None = None,
         timeout: float = 2.5,
-    ) -> dict[str, Any] | None:
+    ) -> list[Any] | None:
         client = self.client
         if client is None:
             raise EebusRuntimeError("EEBUS client is not connected")
         candidates = find_features(
             self._discovery,
             feature_type,
-            entity=entity,
             function_name=function_name,
             default_device=client._remote_device_address,
         )
-        if not candidates and entity is not None:
-            candidates = find_features(
-                self._discovery,
-                feature_type,
-                function_name=function_name,
-                default_device=client._remote_device_address,
-            )
         if not candidates:
             return None
-        # Prefer the deepest EV child over the EVSE/root feature.
-        destination = max(
-            (feature["address"] for feature in candidates),
-            key=lambda address: len(address.get("entity") or []),
+
+        # Hager exposes related values on both EVSE and EV features. Reading only
+        # the deepest EV child loses the wallbox power values and, depending on
+        # firmware, the writable load-control limits.
+        entity_kinds = entity_types(self._discovery)
+        relevant = [
+            feature
+            for feature in candidates
+            if entity is None
+            or feature["address"].get("entity") == entity
+            or entity_kinds.get(tuple(feature["address"].get("entity") or []))
+            in {"EVSE", "EV"}
+        ]
+        if relevant:
+            candidates = relevant
+        candidates.sort(
+            key=lambda feature: (
+                feature["address"].get("entity") != entity,
+                len(feature["address"].get("entity") or []),
+            )
         )
 
         def extractor(datagram: Any) -> list[Any]:
@@ -266,17 +278,30 @@ class EebusRuntime:
                 if function_name in command
             ]
 
-        try:
-            payloads = await client._request_function_data(
-                source=_source_address(client, feature_type),
-                destination=destination,
-                function_name=function_name,
-                extractor=extractor,
-                timeout=timeout,
+        collected: list[Any] = []
+        seen: set[tuple[Any, ...]] = set()
+        for feature in candidates:
+            destination = feature["address"]
+            address_key = (
+                destination.get("device"),
+                tuple(destination.get("entity") or []),
+                destination.get("feature"),
             )
-        except asyncio.TimeoutError:
-            return None
-        return payloads[-1] if payloads else None
+            if address_key in seen:
+                continue
+            seen.add(address_key)
+            try:
+                payloads = await client._request_function_data(
+                    source=_source_address(client, feature_type),
+                    destination=destination,
+                    function_name=function_name,
+                    extractor=extractor,
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                continue
+            collected.extend(payloads)
+        return collected or None
 
     async def _read_discovery(self) -> None:
         assert self.client is not None
@@ -432,7 +457,6 @@ class EebusRuntime:
         self._static["identification"] = await self._read_function(
             "Identification", "identificationListData", entity=ev_entity
         )
-        await self._bind_and_subscribe()
 
     async def _collect_state(self) -> dict[str, Any]:
         await self._read_discovery()
@@ -440,7 +464,12 @@ class EebusRuntime:
         ev_entity = preferred_ev_entity(self._discovery)
         if signature != self._static_signature:
             self._static_signature = signature
+            self._static_attempts = 0
+            self._static = {}
+            await self._bind_and_subscribe()
+        if self._static_attempts < 3:
             await self._read_static(ev_entity)
+            self._static_attempts += 1
 
         dynamic = {
             "measurements": await self._read_function(
@@ -461,6 +490,7 @@ class EebusRuntime:
                 entity=ev_entity,
             ),
         }
+        self._dynamic = dynamic
         measurement = decode_measurements(
             self._static.get("measurement_descriptions"),
             self._static.get("electrical_parameters"),
@@ -485,21 +515,15 @@ class EebusRuntime:
         applied_current = obligation.get("value_a")
         if self._target_current_a is None and isinstance(applied_current, (int, float)):
             self._target_current_a = float(applied_current)
-        power = float(measurement.get("power_w") or 0)
-        current = float(measurement.get("current_a") or 0)
         operating_state = str(diagnosis.get("operatingState") or "unknown")
         fault = operating_state.lower() in {"failure", "error"}
         vehicle_connected = any(kind == "EV" for kind in entities.values())
-        charging = power > 50 or current > 0.5
+        charging = charging_activity(measurement)
         enabled = not obligation.get("active") or float(applied_current or 0) >= 1
-        status = (
-            "fault"
-            if fault
-            else "charging"
-            if charging
-            else "ready"
-            if vehicle_connected
-            else "idle"
+        status = charging_status(
+            fault=fault,
+            vehicle_connected=vehicle_connected,
+            charging=charging,
         )
 
         state: dict[str, Any] = {
@@ -568,6 +592,15 @@ class EebusRuntime:
         }
         self._last_state = state
         return state
+
+    def diagnostics_snapshot(self) -> dict[str, Any]:
+        """Expose raw SPINE discovery and reads for hardware-beta diagnostics."""
+        return {
+            "discovery": self._discovery,
+            "static_reads": self._static,
+            "dynamic_reads": self._dynamic,
+            "static_read_attempts": self._static_attempts,
+        }
 
     async def async_update(self) -> dict[str, Any]:
         """Connect/reconnect and return a complete state snapshot."""
