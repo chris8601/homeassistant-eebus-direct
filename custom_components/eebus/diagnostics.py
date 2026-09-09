@@ -28,4 +28,5 @@ async def async_get_config_entry_diagnostics(
         "measurements": state.get("measurements"),
         "vehicle": state.get("vehicle"),
         "diagnostics": state.get("diagnostics"),
+        "protocol": coordinator.runtime.diagnostics_snapshot(),
     }
