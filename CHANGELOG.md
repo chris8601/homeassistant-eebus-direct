@@ -1,5 +1,12 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.5
+
+- standardkonforme SHIP-Antwort auf `accessMethodsRequest` umgesetzt
+- nicht standardisierte `accessMethodsResponse`-Nachricht im normalen Verbindungsaufbau entfernt
+- Phasenprotokollierung für CMI, Hello/Vertrauen, Protokollauswahl, PIN und Zugriffsmethoden ergänzt
+- Wartezeiten für die erste SPINE-Gerätebeschreibung der Wallbox erhöht
+
 ## 0.1.0-beta.4
 
 - Schema-Serialisierungsfehler der Home-Assistant-Oberfläche unter Python 3.14 behoben

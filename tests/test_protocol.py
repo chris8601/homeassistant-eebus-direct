@@ -38,6 +38,36 @@ discovery_module = importlib.import_module(
 trust_module = importlib.import_module(
     "custom_components.eebus._vendor.eebus_sdk.trust"
 )
+ship_module = importlib.import_module("custom_components.eebus._vendor.eebus_sdk.ship")
+websocket_module = importlib.import_module(
+    "custom_components.eebus._vendor.eebus_sdk.websocket"
+)
+
+
+class _AccessHandshakeTransport:
+    """Deterministic SHIP transport for the access-methods exchange."""
+
+    def __init__(self) -> None:
+        self.sent: list[bytes] = []
+        self.frames = [
+            self._control_frame({"accessMethodsRequest": {}}),
+            self._control_frame(
+                {"accessMethods": {"id": "i:HAGER_u:WITTY_r:EVSE"}}
+            ),
+        ]
+
+    @staticmethod
+    def _control_frame(payload: dict[str, object]):
+        encoded = bytes([ship_module.SHIP_MSG_CONTROL]) + json_codec.to_eebus_json_bytes(
+            payload
+        )
+        return websocket_module.WebSocketFrame(opcode=0x2, payload=encoded)
+
+    async def send_binary(self, payload: bytes) -> None:
+        self.sent.append(payload)
+
+    async def receive_frame(self):
+        return self.frames.pop(0)
 
 
 class ProtocolTests(unittest.TestCase):
@@ -82,6 +112,49 @@ class ProtocolTests(unittest.TestCase):
             json_codec.to_eebus_json_bytes(datagram.as_ship_payload()).decode()
         )
         self.assertIn("function", json.dumps(wire))
+
+
+class ShipHandshakeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_access_exchange_uses_only_standard_ship_messages(self) -> None:
+        transport = _AccessHandshakeTransport()
+        identity = sdk_identity.IdentityMaterial(
+            ship_id="i:HA_u:TEST_r:CEM",
+            device_id="TEST",
+            common_name="TEST.cls",
+            ski="00" * 20,
+            cert_path="/tmp/no-cert",
+            key_path="/tmp/no-key",
+            qr_payload="",
+        )
+        session = ship_module.ShipSession(
+            ship_module.ShipConnectionConfig(
+                host="192.0.2.10",
+                port=4712,
+                path="/ship/",
+                server_name="witty.local",
+            ),
+            identity,
+            trust_module.TrustStore(),
+            transport=transport,
+        )
+
+        await session._access_methods_handshake()
+
+        sent_messages = [
+            json_codec.from_eebus_json_bytes(message[1:])
+            for message in transport.sent
+        ]
+        self.assertEqual(
+            sent_messages,
+            [
+                {"accessMethodsRequest": []},
+                {"accessMethods": {"id": "i:HA_u:TEST_r:CEM"}},
+            ],
+        )
+        self.assertFalse(
+            any("accessMethodsResponse" in message for message in sent_messages)
+        )
+        self.assertEqual(session.remote_ship_id, "i:HAGER_u:WITTY_r:EVSE")
 
     def test_default_profile_is_an_ev_cem(self) -> None:
         material = sdk_identity.IdentityMaterial(

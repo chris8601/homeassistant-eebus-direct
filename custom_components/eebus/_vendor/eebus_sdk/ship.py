@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Protocol
 
@@ -19,6 +20,8 @@ SHIP_MSG_INIT = 0
 SHIP_MSG_CONTROL = 1
 SHIP_MSG_DATA = 2
 SHIP_MSG_END = 3
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class AsyncBinaryTransport(Protocol):
@@ -165,6 +168,7 @@ class ShipSession:
     async def send_control(self, payload: dict[str, Any]) -> None:
         encoded = bytes([SHIP_MSG_CONTROL]) + to_eebus_json_bytes(payload)
         await self.transport.send_binary(encoded)
+        _LOGGER.debug("SHIP control sent: %s", payload)
         self.trace.log("tx_control", payload=payload, hex=encoded.hex())
 
     async def send_spine(self, payload: SpineDatagram | dict[str, Any]) -> None:
@@ -196,6 +200,7 @@ class ShipSession:
 
             decoded = from_eebus_json_bytes(body)
             if msg_type == SHIP_MSG_CONTROL:
+                _LOGGER.debug("SHIP control received: %s", decoded)
                 self.trace.log("rx_control", payload=decoded, hex=frame.payload.hex())
             elif msg_type == SHIP_MSG_DATA:
                 self.trace.log("rx_data", payload=decoded, hex=frame.payload.hex())
@@ -627,23 +632,33 @@ class ShipSession:
                         await self.send_control(self._build_local_access_methods())
                         sent_local_access_methods = True
                     continue
-                if self.config.send_access_methods_response:
-                    await self.send_control(self._build_access_methods_response(payload["accessMethodsRequest"]))
                 if self.config.send_local_access_methods and not sent_local_access_methods:
                     await self.send_control(self._build_local_access_methods())
                     sent_local_access_methods = True
                 continue
             if "accessMethodsResponse" in payload:
+                if self.config.access_handshake_mode != "compatibility":
+                    raise ShipHandshakeError(
+                        "unexpected accessMethodsResponse during standard SHIP access exchange"
+                    )
                 access_request = self._build_access_request(payload["accessMethodsResponse"])
                 if access_request is not None:
                     await self.send_control(access_request)
                 continue
             if "accessRequest" in payload:
+                if self.config.access_handshake_mode != "compatibility":
+                    raise ShipHandshakeError(
+                        "unexpected accessRequest during standard SHIP access exchange"
+                    )
                 if self.config.send_local_access_methods and not sent_local_access_methods:
                     await self.send_control(self._build_local_access_methods())
                     sent_local_access_methods = True
                 continue
             if "accessStatus" in payload:
+                if self.config.access_handshake_mode != "compatibility":
+                    raise ShipHandshakeError(
+                        "unexpected accessStatus during standard SHIP access exchange"
+                    )
                 if self._access_status_allows_keepalive(payload["accessStatus"]):
                     self._mark_access_confirmed()
                 continue
@@ -658,12 +673,25 @@ class ShipSession:
             raise ShipHandshakeError(f"unexpected access methods payload {payload!r}")
 
     async def perform_handshake(self) -> str:
-        await self._send_cmi_init()
-        await self._expect_cmi_ack()
-        await self._hello()
-        await self._protocol_handshake()
-        await self._pin_handshake()
-        await self._access_methods_handshake()
+        phases = (
+            ("CMI senden", self._send_cmi_init),
+            ("CMI bestätigen", self._expect_cmi_ack),
+            ("Hello/Vertrauen", self._hello),
+            ("Protokollauswahl", self._protocol_handshake),
+            ("PIN-Status", self._pin_handshake),
+            ("Zugriffsmethoden", self._access_methods_handshake),
+        )
+        for phase, action in phases:
+            _LOGGER.debug("SHIP handshake phase started: %s", phase)
+            try:
+                await action()
+            except PairingRejectedError:
+                raise
+            except Exception as exc:
+                raise ShipHandshakeError(
+                    f"SHIP handshake failed in phase '{phase}': {exc}"
+                ) from exc
+            _LOGGER.debug("SHIP handshake phase completed: %s", phase)
         self._start_ping_loop()
         self._start_keepalive_loop()
         self.trace.log("ship_handshake_complete", remote_ship_id=self.remote_ship_id)

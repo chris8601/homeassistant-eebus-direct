@@ -110,8 +110,8 @@ async def _validate_pairing(
         profile="default",
     )
     try:
-        await client.bootstrap_spine(timeout=2.0)
-        payloads = await client.request_remote_detailed_discovery(timeout=5.0)
+        await client.bootstrap_spine(timeout=8.0)
+        payloads = await client.request_remote_detailed_discovery(timeout=15.0)
         discovery = next(
             (
                 payload
