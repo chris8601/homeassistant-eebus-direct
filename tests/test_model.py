@@ -175,6 +175,34 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(decoded["obligation"]["min_a"], 6)
         self.assertEqual(decoded["obligation"]["max_a"], 32)
 
+    def test_charging_activity_requires_a_real_measurement(self) -> None:
+        self.assertIsNone(model.charging_activity({"raw": []}))
+        self.assertFalse(
+            model.charging_activity({"raw": [], "power_w": 0, "current_a": 0})
+        )
+        self.assertTrue(
+            model.charging_activity({"raw": [], "power_w": 3680, "current_a": 16})
+        )
+
+    def test_status_is_unknown_when_connected_without_charge_samples(self) -> None:
+        self.assertIsNone(
+            model.charging_status(
+                fault=False, vehicle_connected=True, charging=None
+            )
+        )
+        self.assertEqual(
+            model.charging_status(
+                fault=False, vehicle_connected=True, charging=True
+            ),
+            "charging",
+        )
+        self.assertEqual(
+            model.charging_status(
+                fault=True, vehicle_connected=True, charging=None
+            ),
+            "fault",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
