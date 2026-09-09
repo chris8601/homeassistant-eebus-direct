@@ -305,6 +305,33 @@ def decode_measurements(
     return result
 
 
+def charging_activity(measurements: dict[str, Any]) -> bool | None:
+    """Derive charging activity only when the EVSE supplied usable samples."""
+    power = measurements.get("power_w")
+    current = measurements.get("current_a")
+    if not isinstance(power, (int, float)) and not isinstance(current, (int, float)):
+        return None
+    return bool(
+        (isinstance(power, (int, float)) and power > 50)
+        or (isinstance(current, (int, float)) and current > 0.5)
+    )
+
+
+def charging_status(
+    *, fault: bool, vehicle_connected: bool, charging: bool | None
+) -> str | None:
+    """Return a charging status without inventing a state from missing data."""
+    if fault:
+        return "fault"
+    if charging is True:
+        return "charging"
+    if charging is False:
+        return "ready" if vehicle_connected else "idle"
+    if not vehicle_connected:
+        return "idle"
+    return None
+
+
 def _range_values(value: Any) -> tuple[float | None, float | None, float | None]:
     minima: list[float] = []
     maxima: list[float] = []
