@@ -22,7 +22,7 @@ from .entity import EebusEntity, get_path
 
 @dataclass(frozen=True, kw_only=True)
 class EebusBinaryDescription(BinarySensorEntityDescription):
-    value_fn: Callable[[dict[str, Any]], bool]
+    value_fn: Callable[[dict[str, Any]], bool | None]
 
 
 BINARY_SENSORS = (
@@ -43,7 +43,7 @@ BINARY_SENSORS = (
         key="charging",
         translation_key="charging",
         device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
-        value_fn=lambda data: bool(get_path(data, "charging", "active")),
+        value_fn=lambda data: get_path(data, "charging", "active"),
     ),
     EebusBinaryDescription(
         key="fault",
@@ -75,5 +75,9 @@ class EebusBinarySensor(EebusEntity, BinarySensorEntity):
         self.entity_description = description
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         return self.entity_description.value_fn(self.coordinator.data)
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.is_on is not None
