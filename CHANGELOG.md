@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.9
+
+- Reihenfolge des SPINE-`CmdType` für Partial-Reads korrigiert: `function`, `filter`, Funktionsdaten
+- Regressionstest prüft jetzt die tatsächlich auf dem SHIP-Kanal übertragene EEBUS-JSON-Reihenfolge
+
 ## 0.1.0-beta.8
 
 - von der Hager Witty Flow angekündigte SPINE-Partial-Reads werden jetzt mit `cmdControl.partial` und funktionsspezifischen Selektoren angefordert
