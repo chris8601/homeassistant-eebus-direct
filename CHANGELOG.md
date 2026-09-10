@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.8
+
+- von der Hager Witty Flow angekündigte SPINE-Partial-Reads werden jetzt mit `cmdControl.partial` und funktionsspezifischen Selektoren angefordert
+- Messwerte, elektrische Parameter, Ladegrenzen, Konfiguration und Identifikation können dadurch von Partial-Read-only-Features gelesen werden
+- abgelehnte Leseanforderungen werden über `msgCounterReference` erkannt und mit EEBUS-Fehlernummer in den Diagnosedaten ausgegeben
+
 ## 0.1.0-beta.7
 
 - Endlosschleife nach einem sofortigen Fehler im Kopplungsdialog verhindert
