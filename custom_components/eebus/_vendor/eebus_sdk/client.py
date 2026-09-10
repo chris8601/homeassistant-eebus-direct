@@ -23,6 +23,7 @@ from .spine import (
     extract_measurement_descriptions,
     extract_measurement_payloads,
 )
+from .exceptions import SpineResultError
 from .trace import TraceLogger
 from .trust import TrustStore
 
@@ -698,6 +699,7 @@ class HemsClient:
         *,
         extractor: Callable[[SpineDatagram], list[Any]],
         timeout: float,
+        msg_counter_reference: int | None = None,
     ) -> list[dict[str, Any]]:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -705,6 +707,23 @@ class HemsClient:
         while loop.time() < deadline:
             remaining = max(0.1, deadline - loop.time())
             datagram = await self._receive_and_process(timeout=remaining)
+            header = extract_header(datagram)
+            if (
+                msg_counter_reference is not None
+                and header.get("cmdClassifier") == "result"
+                and header.get("msgCounterReference") == msg_counter_reference
+            ):
+                for command in extract_commands(datagram):
+                    result = command.get("resultData")
+                    if not isinstance(result, dict):
+                        continue
+                    error_number = int(result.get("errorNumber", 0))
+                    if error_number:
+                        description = result.get("description")
+                        raise SpineResultError(
+                            error_number,
+                            str(description) if description is not None else None,
+                        )
             for payload in extractor(datagram):
                 if isinstance(payload, dict):
                     matches.append(payload)
@@ -757,17 +776,26 @@ class HemsClient:
         function_name: str,
         extractor: Callable[[SpineDatagram], list[Any]],
         timeout: float,
+        partial: bool = False,
+        selectors: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
+        msg_counter = self._next_msg_counter()
         await self.session.send_spine(
             build_read_datagram(
                 source=source,
                 destination=destination,
-                msg_counter=self._next_msg_counter(),
+                msg_counter=msg_counter,
                 function_name=function_name,
+                partial=partial,
+                selectors=selectors,
                 ack_request=self._outbound_read_ack_request(),
             )
         )
-        return await self._collect_matching_payloads(extractor=extractor, timeout=timeout)
+        return await self._collect_matching_payloads(
+            extractor=extractor,
+            timeout=timeout,
+            msg_counter_reference=msg_counter,
+        )
 
     async def discover_nodes(self, *, timeout: float = 5.0) -> list[dict]:
         """Fetch the peer's detailed discovery payloads."""
