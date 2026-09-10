@@ -152,7 +152,12 @@ def build_read_datagram(
         command_filter: dict[str, Any] = {"cmdControl": {"partial": {}}}
         if selectors is not None:
             command_filter[f"{function_name}Selectors"] = selectors
-        command["filter"] = command_filter
+        # CmdType.filter is a sequence of FilterType values.  Keeping the
+        # filter itself in a list is significant for EEBUS' JSON encoding:
+        # it produces ``"filter": [[...]]`` on the wire.  A bare mapping
+        # produces only one array level and strict SPINE 1.2 peers silently
+        # discard the malformed command.
+        command["filter"] = [command_filter]
     command[function_name] = []
     return build_datagram(
         source=source,
