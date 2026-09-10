@@ -113,6 +113,26 @@ def feature_supports(feature: dict[str, Any], function_name: str) -> bool:
     return False
 
 
+def feature_requires_partial_read(
+    feature: dict[str, Any], function_name: str
+) -> bool:
+    """Return whether discovery advertises only partial reads for a function."""
+    functions = feature.get("functions")
+    if isinstance(functions, dict):
+        functions = [functions]
+    if not isinstance(functions, list):
+        return False
+    for item in functions:
+        if not isinstance(item, dict) or item.get("function") != function_name:
+            continue
+        operations = item.get("possibleOperations")
+        if not isinstance(operations, dict):
+            return False
+        read = operations.get("read")
+        return isinstance(read, dict) and "partial" in read
+    return False
+
+
 def find_features(
     discovery: dict[str, Any],
     feature_type: str,
