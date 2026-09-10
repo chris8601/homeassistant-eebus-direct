@@ -38,8 +38,11 @@
     },
     "abort": {
       "already_configured": "Dieses EEBUS-Gerät ist bereits eingerichtet.",
+      "cannot_connect": "Die EEBUS-/TLS-Verbindung ist fehlgeschlagen. Prüfe Netzwerk und Kopplungsmodus und starte die Einrichtung erneut.",
       "invalid_discovery_info": "Der gefundene SHIP-Dienst enthält keinen verwendbaren Port.",
-      "interface_required": "Die LAN-Schnittstelle von Home Assistant konnte nicht ermittelt werden."
+      "interface_required": "Die LAN-Schnittstelle von Home Assistant konnte nicht ermittelt werden.",
+      "pairing_not_approved": "Die Wallbox hat die EEBUS-Verbindung nicht bestätigt. Aktiviere den Kopplungsmodus und starte die Einrichtung erneut.",
+      "ski_mismatch": "Der eingegebene Wallbox-SKI stimmt nicht mit ihrem TLS-Zertifikat überein. Starte die Einrichtung mit dem richtigen SKI erneut."
     }
   },
   "options": {
