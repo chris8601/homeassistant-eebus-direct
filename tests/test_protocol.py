@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import importlib
 import json
+import ssl
 import sys
 import tempfile
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -98,6 +100,40 @@ class ProtocolTests(unittest.TestCase):
             der = certificate.public_bytes(serialization.Encoding.DER)
             self.assertEqual(sdk_identity.extract_ski_from_peer_cert(der), first.ski)
             self.assertEqual(Path(first.key_path).stat().st_mode & 0o777, 0o600)
+
+    def test_mismatched_certificate_and_key_are_repaired(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as other_directory,
+        ):
+            first, path = identity_module.create_or_load_identity(directory)
+            other, _ = identity_module.create_or_load_identity(other_directory)
+            Path(first.key_path).write_bytes(Path(other.key_path).read_bytes())
+
+            repaired, repaired_path = identity_module.create_or_load_identity(directory)
+
+            self.assertEqual(path, repaired_path)
+            self.assertNotEqual(first.ski, repaired.ski)
+            context = ssl.create_default_context()
+            context.load_cert_chain(repaired.cert_path, repaired.key_path)
+
+    def test_parallel_identity_creation_returns_one_valid_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(
+                    executor.map(
+                        lambda _: identity_module.create_or_load_identity(directory),
+                        range(24),
+                    )
+                )
+
+            identities = [identity for identity, _ in results]
+            self.assertEqual(len({identity.ski for identity in identities}), 1)
+            context = ssl.create_default_context()
+            context.load_cert_chain(
+                identities[0].cert_path,
+                identities[0].key_path,
+            )
 
     def test_outbound_spine_commands_include_function(self) -> None:
         datagram = spine.build_read_datagram(
