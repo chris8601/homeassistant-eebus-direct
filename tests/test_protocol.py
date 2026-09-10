@@ -165,14 +165,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(command["measurementListData"], [])
         self.assertEqual(
             command["filter"],
-            {"cmdControl": {"partial": {}}},
+            [{"cmdControl": {"partial": {}}}],
         )
         decoded_wire = json_codec.from_eebus_json_bytes(
             json_codec.to_eebus_json_bytes(datagram.as_ship_payload())
         )
         wire_command = decoded_wire["data"]["payload"]["datagram"]["payload"]["cmd"][0]
-        self.assertIn("partial", wire_command["filter"]["cmdControl"])
-        self.assertNotIn("measurementListDataSelectors", wire_command["filter"])
+        self.assertIn("partial", wire_command["filter"][0]["cmdControl"])
+        self.assertNotIn("measurementListDataSelectors", wire_command["filter"][0])
 
         encoded_wire = json.loads(
             json_codec.to_eebus_json_bytes(datagram.as_ship_payload()).decode()
@@ -183,6 +183,10 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(
             [next(iter(field)) for field in encoded_command],
             ["function", "filter", "measurementListData"],
+        )
+        self.assertEqual(
+            encoded_command[1]["filter"],
+            [[{"cmdControl": [{"partial": []}]}]],
         )
 
     def test_full_read_has_no_filter(self) -> None:
@@ -208,7 +212,7 @@ class ProtocolTests(unittest.TestCase):
             )
         )[0]
         self.assertEqual(
-            command["filter"]["measurementListDataSelectors"],
+            command["filter"][0]["measurementListDataSelectors"],
             {"measurementId": 1},
         )
 
