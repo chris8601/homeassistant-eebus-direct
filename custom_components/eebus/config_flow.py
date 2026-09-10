@@ -285,18 +285,26 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.warning("Wallbox certificate does not match entered SKI: %s", error)
             self._pair_error = "ski_mismatch"
             self._pair_task = None
-            return self.async_show_progress_done(next_step_id="pair")
+            return self.async_show_progress_done(next_step_id="pair_failed")
         if isinstance(error, PairingRejectedError):
             _LOGGER.warning("Wallbox did not accept the EEBUS connection: %s", error)
             self._pair_error = "pairing_not_approved"
             self._pair_task = None
-            return self.async_show_progress_done(next_step_id="pair")
+            return self.async_show_progress_done(next_step_id="pair_failed")
         if error is not None:
             _LOGGER.warning("EEBUS pairing failed: %s", error)
             self._pair_error = "cannot_connect"
             self._pair_task = None
-            return self.async_show_progress_done(next_step_id="pair")
+            return self.async_show_progress_done(next_step_id="pair_failed")
         return self.async_show_progress_done(next_step_id="pair_finish")
+
+    async def async_step_pair_failed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """End a failed progress flow without automatically retrying it."""
+        reason = self._pair_error or "cannot_connect"
+        self._pair_error = None
+        return self.async_abort(reason=reason)
 
     async def async_step_pair_finish(
         self, user_input: dict[str, Any] | None = None
@@ -326,6 +334,11 @@ class EebusConfigFlow(ConfigFlow, domain=DOMAIN):
             raise AbortFlow("invalid_discovery_info")
         self._service = service
         self._services = [service]
+        discovery_unique_id = (
+            service.ski or service.ship_id or f"ship:{service.service_name.lower()}"
+        )
+        await self.async_set_unique_id(discovery_unique_id)
+        self._abort_if_unique_id_configured()
         try:
             self._interface_ip = await self.hass.async_add_executor_job(
                 detect_interface_ip
