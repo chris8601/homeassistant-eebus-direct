@@ -62,6 +62,24 @@ class ModelTests(unittest.TestCase):
         )
         self.assertEqual(found[0]["address"]["device"], "d:_i:HAGER")
 
+    def test_partial_read_support_is_detected_from_witty_discovery(self) -> None:
+        feature = {
+            "functions": [
+                {
+                    "function": "measurementListData",
+                    "possibleOperations": {"read": {"partial": []}},
+                },
+                {
+                    "function": "otherData",
+                    "possibleOperations": {"read": []},
+                },
+            ]
+        }
+        self.assertTrue(
+            model.feature_requires_partial_read(feature, "measurementListData")
+        )
+        self.assertFalse(model.feature_requires_partial_read(feature, "otherData"))
+
     def test_measurement_ids_are_mapped_by_descriptions(self) -> None:
         descriptions = {
             "measurementDescriptionData": [
