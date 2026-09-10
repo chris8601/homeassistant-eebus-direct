@@ -148,17 +148,31 @@ def build_read_datagram(
     destination: dict[str, Any],
     msg_counter: int,
     function_name: str,
-    selectors: Any = None,
+    selectors: dict[str, Any] | None = None,
+    partial: bool = False,
     specification_version: str = SPECIFICATION_VERSION,
     ack_request: bool | None = True,
 ) -> SpineDatagram:
     # ``function`` is mandatory in the SPINE command frame.  Some permissive
     # peers infer it from the data element, but real EVSE implementations such
     # as the Hager/Elli family expect both fields.
-    command = {
+    command: dict[str, Any] = {
         "function": function_name,
-        function_name: [] if selectors is None else selectors,
+        function_name: [],
     }
+    if partial or selectors is not None:
+        # SPINE partial reads are expressed by a command filter.  The
+        # function's data element remains empty; putting selectors there is a
+        # different (and invalid) command shape.  An empty selector matches
+        # every list entry and is required by partial-only EVSE features.
+        command_filter: dict[str, Any] = {"cmdControl": {"partial": {}}}
+        # ListData functions have generated *Selectors types in SPINE.  Empty
+        # selectors match the complete collection.  Scalar structures such as
+        # DeviceDiagnosisStateData do not define a selector type, so the
+        # cmdControl marker alone is the valid all-elements request.
+        if selectors is not None or function_name.endswith("ListData"):
+            command_filter[f"{function_name}Selectors"] = selectors or {}
+        command["filter"] = command_filter
     return build_datagram(
         source=source,
         destination=destination,
