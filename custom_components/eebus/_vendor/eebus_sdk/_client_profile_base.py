@@ -54,7 +54,9 @@ class ClientProfileBaseMixin:
         if self._uses_cls_adapter_profile():
             return self._build_cls_adapter_detailed_discovery(local_device)
         return {
-            "specificationVersionList": {"specificationVersion": ["1.3.0"]},
+            "specificationVersionList": {
+                "specificationVersion": ["1.2.0", "1.3.0"]
+            },
             "deviceInformation": {
                 "description": {
                     "deviceAddress": {"device": local_device},

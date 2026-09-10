@@ -42,7 +42,6 @@ from .model import (
     decode_measurements,
     decode_use_cases,
     entity_types,
-    feature_requires_partial_read,
     find_features,
     preferred_ev_entity,
 )
@@ -117,6 +116,10 @@ class EebusRuntime:
         self._static: dict[str, Any] = {}
         self._dynamic: dict[str, Any] = {}
         self._read_errors: dict[str, dict[str, Any]] = {}
+        self._read_attempts: dict[str, list[dict[str, Any]]] = {}
+        self._last_protocol_traffic: list[dict[str, Any]] = []
+        self._last_specification_version: str | None = None
+        self._last_peer_specification_versions: list[str] = []
         self._target_current_a: float | None = None
         self._target_phase_a: dict[str, float] = {}
         self._solar_current_a: float | None = None
@@ -176,8 +179,14 @@ class EebusRuntime:
         client = self.client
         self.client = None
         if client is not None:
+            self._last_protocol_traffic = client.recent_traffic
+            self._last_specification_version = client.specification_version
+            self._last_peer_specification_versions = (
+                client.peer_specification_versions
+            )
             with suppress(Exception):
                 await client.close()
+        self._static_signature = None
 
     async def async_close(self) -> None:
         """Close the active SHIP connection."""
@@ -218,6 +227,7 @@ class EebusRuntime:
                             destination=destination,
                             cmd_classifier="notify",
                             msg_counter=client._next_msg_counter(),
+                            specification_version=client.specification_version,
                             commands=[
                                 {
                                     "deviceDiagnosisHeartbeatData": client._profile_device_diagnosis_heartbeat_data()
@@ -251,6 +261,7 @@ class EebusRuntime:
             default_device=client._remote_device_address,
         )
         if not candidates:
+            self._record_read_attempt(function_name, {"status": "unsupported"})
             return None
 
         # Hager exposes related values on both EVSE and EV features. Reading only
@@ -293,6 +304,10 @@ class EebusRuntime:
             if address_key in seen:
                 continue
             seen.add(address_key)
+            attempt: dict[str, Any] = {
+                "destination": destination,
+                "mode": "full",
+            }
             try:
                 payloads = await client._request_function_data(
                     source=_source_address(client, feature_type),
@@ -300,10 +315,19 @@ class EebusRuntime:
                     function_name=function_name,
                     extractor=extractor,
                     timeout=timeout,
-                    partial=feature_requires_partial_read(feature, function_name),
+                    partial=False,
                 )
             except SpineResultError as exc:
+                attempt.update(
+                    {
+                        "status": "rejected",
+                        "error_number": exc.error_number,
+                        "description": exc.description,
+                    }
+                )
+                self._record_read_attempt(function_name, attempt)
                 self._read_errors[function_name] = {
+                    "reason": "rejected",
                     "error_number": exc.error_number,
                     "description": exc.description,
                     "destination": destination,
@@ -316,11 +340,31 @@ class EebusRuntime:
                 )
                 continue
             except asyncio.TimeoutError:
+                attempt["status"] = "timeout"
+                self._record_read_attempt(function_name, attempt)
+                self._read_errors[function_name] = {
+                    "reason": "timeout",
+                    "destination": destination,
+                }
                 continue
+            attempt.update(
+                {
+                    "status": "data" if payloads else "empty",
+                    "payload_count": len(payloads),
+                }
+            )
+            self._record_read_attempt(function_name, attempt)
             if payloads:
                 self._read_errors.pop(function_name, None)
             collected.extend(payloads)
         return collected or None
+
+    def _record_read_attempt(
+        self, function_name: str, attempt: dict[str, Any]
+    ) -> None:
+        attempts = self._read_attempts.setdefault(function_name, [])
+        attempts.append(attempt)
+        del attempts[:-8]
 
     async def _read_discovery(self) -> None:
         assert self.client is not None
@@ -391,7 +435,17 @@ class EebusRuntime:
                 default_device=client._remote_device_address,
             ):
                 bindings.append((feature_type, feature["address"]))
-        for feature_type in ("DeviceDiagnosis", "LoadControl", "Measurement"):
+        # DeviceDiagnosis and NodeManagement are already subscribed during the
+        # SDK bootstrap.  Subscribe every other server feature used by the CEM
+        # use cases before requesting its initial values.
+        for feature_type in (
+            "DeviceClassification",
+            "DeviceConfiguration",
+            "ElectricalConnection",
+            "Identification",
+            "LoadControl",
+            "Measurement",
+        ):
             for feature in find_features(
                 self._discovery,
                 feature_type,
@@ -407,6 +461,7 @@ class EebusRuntime:
                     cmd_classifier="call",
                     msg_counter=client._next_msg_counter(),
                     ack_request=True,
+                    specification_version=client.specification_version,
                     commands=[
                         {
                             "nodeManagementBindingRequestCall": {
@@ -620,6 +675,22 @@ class EebusRuntime:
             "dynamic_reads": self._dynamic,
             "static_read_attempts": self._static_attempts,
             "read_errors": self._read_errors,
+            "read_attempts": self._read_attempts,
+            "negotiated_specification_version": (
+                self.client.specification_version
+                if self.client is not None
+                else self._last_specification_version
+            ),
+            "peer_specification_versions": (
+                self.client.peer_specification_versions
+                if self.client is not None
+                else self._last_peer_specification_versions
+            ),
+            "recent_traffic": (
+                self.client.recent_traffic
+                if self.client is not None
+                else self._last_protocol_traffic
+            ),
         }
 
     async def async_update(self) -> dict[str, Any]:
@@ -706,6 +777,7 @@ class EebusRuntime:
             cmd_classifier="write",
             msg_counter=message_counter,
             ack_request=True,
+            specification_version=client.specification_version,
             commands=[
                 {
                     "function": "loadControlLimitListData",

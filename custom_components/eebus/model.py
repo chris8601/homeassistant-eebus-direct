@@ -113,10 +113,10 @@ def feature_supports(feature: dict[str, Any], function_name: str) -> bool:
     return False
 
 
-def feature_requires_partial_read(
+def feature_supports_partial_read(
     feature: dict[str, Any], function_name: str
 ) -> bool:
-    """Return whether discovery advertises only partial reads for a function."""
+    """Return whether discovery advertises optional partial-read support."""
     functions = feature.get("functions")
     if isinstance(functions, dict):
         functions = [functions]

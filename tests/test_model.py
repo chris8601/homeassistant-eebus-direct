@@ -76,9 +76,9 @@ class ModelTests(unittest.TestCase):
             ]
         }
         self.assertTrue(
-            model.feature_requires_partial_read(feature, "measurementListData")
+            model.feature_supports_partial_read(feature, "measurementListData")
         )
-        self.assertFalse(model.feature_requires_partial_read(feature, "otherData"))
+        self.assertFalse(model.feature_supports_partial_read(feature, "otherData"))
 
     def test_measurement_ids_are_mapped_by_descriptions(self) -> None:
         descriptions = {

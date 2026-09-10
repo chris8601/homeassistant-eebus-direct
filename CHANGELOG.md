@@ -1,5 +1,15 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.10
+
+- vollständige SPINE-Reads jetzt in der standardkonformen Wire-Form ohne zusätzliches `function`, `filter` oder `ackRequest`
+- `read.partial` in der Gerätebeschreibung wird korrekt als optionale Fähigkeit statt als Pflicht interpretiert
+- Subscription- und Binding-Calls werden ohne unzulässiges `function` und mit erforderlichem `ackRequest` gesendet
+- Subscriptions für Classification, Configuration, ElectricalConnection, Identification, LoadControl und Measurement ergänzt
+- mit der Wallbox ausgehandelte SPINE-Version wird verwendet; Hager Witty Flow mit angekündigtem SPINE 1.2.0 wird unterstützt
+- frühe Subscription-Notifications werden zwischengespeichert und stehen dem ersten Home-Assistant-Update zur Verfügung
+- Diagnosedaten enthalten den Status jeder Leseanforderung sowie eine kompakte Übersicht der letzten SPINE-Telegramme
+
 ## 0.1.0-beta.9
 
 - Reihenfolge des SPINE-`CmdType` für Partial-Reads korrigiert: `function`, `filter`, Funktionsdaten

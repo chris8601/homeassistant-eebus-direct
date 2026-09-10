@@ -12,6 +12,8 @@ from .discovery import ShipService, discover_ship_services
 from .identity import IdentityMaterial
 from .ship import ShipConnectionConfig, ShipEvent, ShipSession
 from .spine import (
+    SPECIFICATION_VERSION,
+    SUPPORTED_SPECIFICATION_VERSIONS,
     SpineDatagram,
     build_datagram,
     build_read_datagram,
@@ -45,6 +47,18 @@ class HemsClient:
     _last_remote_discovery: dict[str, Any] | None = field(default=None, init=False, repr=False)
     _remote_device_diagnosis_bootstrapped: set[str] = field(default_factory=set, init=False, repr=False)
     _initial_node_management_subscription_sent: bool = field(default=False, init=False, repr=False)
+    _specification_version: str = field(
+        default=SPECIFICATION_VERSION, init=False, repr=False
+    )
+    _peer_specification_versions: list[str] = field(
+        default_factory=list, init=False, repr=False
+    )
+    _recent_traffic: list[dict[str, Any]] = field(
+        default_factory=list, init=False, repr=False
+    )
+    _remote_function_cache: dict[str, Any] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if self.profile not in {"default", "hems-reference", "cls-adapter"}:
@@ -167,6 +181,111 @@ class HemsClient:
         self._spine_msg_counter += 1
         return value
 
+    @property
+    def specification_version(self) -> str:
+        """Return the SPINE version currently selected for this peer."""
+        return self._specification_version
+
+    @property
+    def peer_specification_versions(self) -> list[str]:
+        """Return the SPINE versions announced by the peer."""
+        return list(self._peer_specification_versions)
+
+    @property
+    def recent_traffic(self) -> list[dict[str, Any]]:
+        """Return bounded, payload-free SPINE traffic metadata for diagnostics."""
+        return [dict(item) for item in self._recent_traffic]
+
+    @staticmethod
+    def _command_name(command: dict[str, Any]) -> str:
+        function_name = command.get("function")
+        if isinstance(function_name, str):
+            return function_name
+        return next(
+            (
+                key
+                for key in command
+                if key not in {"function", "filter"}
+            ),
+            "unknown",
+        )
+
+    def _remember_traffic(self, direction: str, datagram: SpineDatagram) -> None:
+        try:
+            header = extract_header(datagram)
+            commands = extract_commands(datagram)
+        except (TypeError, ValueError):
+            return
+        summary: dict[str, Any] = {
+            "direction": direction,
+            "specification_version": header.get("specificationVersion"),
+            "classifier": header.get("cmdClassifier"),
+            "msg_counter": header.get("msgCounter"),
+            "msg_counter_reference": header.get("msgCounterReference"),
+            "ack_request": header.get("ackRequest"),
+            "source": header.get("addressSource"),
+            "destination": header.get("addressDestination"),
+            "commands": [self._command_name(command) for command in commands],
+        }
+        results = [
+            command["resultData"]
+            for command in commands
+            if isinstance(command.get("resultData"), dict)
+        ]
+        if results:
+            summary["results"] = results
+        self._recent_traffic.append(summary)
+        del self._recent_traffic[:-100]
+
+    async def _send_spine(self, datagram: SpineDatagram | dict[str, Any]) -> None:
+        if isinstance(datagram, SpineDatagram):
+            self._remember_traffic("tx", datagram)
+        await self.session.send_spine(datagram)
+
+    @staticmethod
+    def _function_cache_key(address: dict[str, Any], function_name: str) -> str:
+        return f"{feature_address_string(address)}::{function_name}"
+
+    def cached_function_data(
+        self, function_name: str, source: dict[str, Any]
+    ) -> list[Any]:
+        """Return the latest reply/notification received for a remote feature."""
+        key = self._function_cache_key(source, function_name)
+        if key not in self._remote_function_cache:
+            return []
+        return [self._remote_function_cache[key]]
+
+    def _select_specification_version(
+        self,
+        header_version: Any = None,
+        discovery: dict[str, Any] | None = None,
+    ) -> None:
+        if (
+            isinstance(header_version, str)
+            and header_version in SUPPORTED_SPECIFICATION_VERSIONS
+        ):
+            self._specification_version = header_version
+        if not isinstance(discovery, dict):
+            return
+        version_data = discovery.get("specificationVersionList")
+        if not isinstance(version_data, dict):
+            return
+        versions = version_data.get("specificationVersion", [])
+        if isinstance(versions, str):
+            versions = [versions]
+        if not isinstance(versions, list):
+            return
+        self._peer_specification_versions = [
+            version for version in versions if isinstance(version, str)
+        ]
+        common = [
+            version
+            for version in SUPPORTED_SPECIFICATION_VERSIONS
+            if version in self._peer_specification_versions
+        ]
+        if common and self._specification_version not in common:
+            self._specification_version = common[-1]
+
     def _local_source_for_destination(self, destination: dict[str, Any]) -> dict[str, Any]:
         source: dict[str, Any] = {"device": self.local_device_address()}
         if "entity" in destination:
@@ -199,9 +318,9 @@ class HemsClient:
         return {"device": self._remote_device_address, "entity": [0], "feature": 0}
 
     def _outbound_read_ack_request(self) -> bool | None:
-        if self._uses_structured_server_profile():
-            return None
-        return True
+        # SPINE READ is answered by REPLY.  A separate RESULT acknowledgement
+        # is requested for CALL/WRITE, but not for ordinary reads.
+        return None
 
     @property
     def _profile_heartbeat_counter(self) -> int:
@@ -438,6 +557,8 @@ class HemsClient:
             destination=self._remote_node_management_destination(),
             cmd_classifier="call",
             msg_counter=self._next_msg_counter(),
+            ack_request=True,
+            specification_version=self._specification_version,
             commands=[
                 {
                     "nodeManagementSubscriptionRequestCall": {
@@ -492,6 +613,7 @@ class HemsClient:
                 msg_counter=self._next_msg_counter(),
                 function_name="nodeManagementUseCaseData",
                 ack_request=self._outbound_read_ack_request(),
+                specification_version=self._specification_version,
             )
         )
         remote_diag_servers = self._remote_feature_addresses_from_last_discovery(
@@ -539,6 +661,7 @@ class HemsClient:
                 msg_counter=self._next_msg_counter(),
                 function_name="deviceDiagnosisHeartbeatData",
                 ack_request=self._outbound_read_ack_request(),
+                specification_version=self._specification_version,
             ),
         ]
 
@@ -585,11 +708,13 @@ class HemsClient:
 
     async def _receive_and_process(self, *, timeout: float | None = None) -> SpineDatagram:
         datagram = await self.session.receive_datagram(timeout=timeout)
+        self._remember_traffic("rx", datagram)
         await self.handle_incoming_datagram(datagram)
         return datagram
 
     async def handle_incoming_datagram(self, datagram: SpineDatagram) -> list[SpineDatagram]:
         header = extract_header(datagram)
+        self._select_specification_version(header.get("specificationVersion"))
         source = header.get("addressSource", {})
         destination = header.get("addressDestination", {})
         if isinstance(source, dict) and isinstance(source.get("device"), str):
@@ -598,6 +723,17 @@ class HemsClient:
         outgoing: list[SpineDatagram] = []
         local_source = self._local_source_for_destination(destination if isinstance(destination, dict) else {})
         commands = extract_commands(datagram)
+        if (
+            header.get("cmdClassifier") in {"reply", "notify", "write"}
+            and isinstance(source, dict)
+        ):
+            for command in commands:
+                function_name = self._command_name(command)
+                payload = command.get(function_name)
+                if function_name != "unknown" and payload is not None:
+                    self._remote_function_cache[
+                        self._function_cache_key(source, function_name)
+                    ] = payload
         needs_result = bool(header.get("ackRequest"))
         if header.get("cmdClassifier") == "call":
             needs_result = True
@@ -673,11 +809,12 @@ class HemsClient:
             for payload in discovery_payloads:
                 if isinstance(payload, dict):
                     self._last_remote_discovery = payload
+                    self._select_specification_version(discovery=payload)
             if header.get("cmdClassifier") in {"reply", "notify"}:
                 outgoing.extend(self._post_discovery_bootstrap())
 
         for response in outgoing:
-            await self.session.send_spine(response)
+            await self._send_spine(response)
         return outgoing
 
     async def bootstrap_spine(self, *, timeout: float = 3.0) -> list[SpineDatagram]:
@@ -700,10 +837,10 @@ class HemsClient:
         extractor: Callable[[SpineDatagram], list[Any]],
         timeout: float,
         msg_counter_reference: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[Any]:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        matches: list[dict[str, Any]] = []
+        matches: list[Any] = []
         while loop.time() < deadline:
             remaining = max(0.1, deadline - loop.time())
             datagram = await self._receive_and_process(timeout=remaining)
@@ -725,7 +862,7 @@ class HemsClient:
                             str(description) if description is not None else None,
                         )
             for payload in extractor(datagram):
-                if isinstance(payload, dict):
+                if isinstance(payload, (dict, list)):
                     matches.append(payload)
             if matches:
                 return matches
@@ -740,13 +877,14 @@ class HemsClient:
                 remaining = max(0.1, deadline - loop.time())
                 await self._receive_and_process(timeout=remaining)
 
-        await self.session.send_spine(
+        await self._send_spine(
             build_read_datagram(
                 source=self.local_node_management_address(),
                 destination=self._remote_node_management_destination(),
                 msg_counter=self._next_msg_counter(),
                 function_name="nodeManagementDetailedDiscoveryData",
                 ack_request=self._outbound_read_ack_request(),
+                specification_version=self._specification_version,
             )
         )
         return await self._collect_matching_payloads(
@@ -778,9 +916,9 @@ class HemsClient:
         timeout: float,
         partial: bool = False,
         selectors: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[Any]:
         msg_counter = self._next_msg_counter()
-        await self.session.send_spine(
+        await self._send_spine(
             build_read_datagram(
                 source=source,
                 destination=destination,
@@ -789,13 +927,21 @@ class HemsClient:
                 partial=partial,
                 selectors=selectors,
                 ack_request=self._outbound_read_ack_request(),
+                specification_version=self._specification_version,
             )
         )
-        return await self._collect_matching_payloads(
-            extractor=extractor,
-            timeout=timeout,
-            msg_counter_reference=msg_counter,
-        )
+        try:
+            payloads = await self._collect_matching_payloads(
+                extractor=extractor,
+                timeout=timeout,
+                msg_counter_reference=msg_counter,
+            )
+        except asyncio.TimeoutError:
+            cached = self.cached_function_data(function_name, destination)
+            if cached:
+                return cached
+            raise
+        return payloads or self.cached_function_data(function_name, destination)
 
     async def discover_nodes(self, *, timeout: float = 5.0) -> list[dict]:
         """Fetch the peer's detailed discovery payloads."""
@@ -845,7 +991,7 @@ class HemsClient:
 
     async def send_datagram(self, payload: SpineDatagram | dict) -> None:
         """Send one SPINE datagram to the connected peer."""
-        await self.session.send_spine(payload)
+        await self._send_spine(payload)
 
     async def session_events(self) -> AsyncIterator[ShipEvent]:
         """Expose the raw SHIP event stream for advanced integrations."""

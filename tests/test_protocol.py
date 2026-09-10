@@ -135,7 +135,7 @@ class ProtocolTests(unittest.TestCase):
                 identities[0].key_path,
             )
 
-    def test_outbound_spine_commands_include_function(self) -> None:
+    def test_full_read_matches_standard_spine_command_shape(self) -> None:
         datagram = spine.build_read_datagram(
             source={"device": "LOCAL", "entity": [1], "feature": 6},
             destination={"device": "REMOTE", "entity": [1, 1], "feature": 11},
@@ -143,11 +143,15 @@ class ProtocolTests(unittest.TestCase):
             function_name="measurementListData",
         )
         command = spine.extract_commands(datagram)[0]
-        self.assertEqual(command["function"], "measurementListData")
+        self.assertEqual(command, {"measurementListData": []})
+        self.assertNotIn("ackRequest", spine.extract_header(datagram))
         wire = json.loads(
             json_codec.to_eebus_json_bytes(datagram.as_ship_payload()).decode()
         )
-        self.assertIn("function", json.dumps(wire))
+        encoded_command = wire["data"][1]["payload"]["datagram"][1]["payload"][0][
+            "cmd"
+        ][0]
+        self.assertEqual(encoded_command, [{"measurementListData": []}])
 
     def test_partial_read_uses_spine_filter_and_empty_function_data(self) -> None:
         datagram = spine.build_read_datagram(
@@ -161,17 +165,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(command["measurementListData"], [])
         self.assertEqual(
             command["filter"],
-            {
-                "cmdControl": {"partial": {}},
-                "measurementListDataSelectors": {},
-            },
+            {"cmdControl": {"partial": {}}},
         )
         decoded_wire = json_codec.from_eebus_json_bytes(
             json_codec.to_eebus_json_bytes(datagram.as_ship_payload())
         )
         wire_command = decoded_wire["data"]["payload"]["datagram"]["payload"]["cmd"][0]
         self.assertIn("partial", wire_command["filter"]["cmdControl"])
-        self.assertIn("measurementListDataSelectors", wire_command["filter"])
+        self.assertNotIn("measurementListDataSelectors", wire_command["filter"])
 
         encoded_wire = json.loads(
             json_codec.to_eebus_json_bytes(datagram.as_ship_payload()).decode()
@@ -185,15 +186,31 @@ class ProtocolTests(unittest.TestCase):
         )
 
     def test_full_read_has_no_filter(self) -> None:
+        datagram = spine.build_read_datagram(
+            source={"device": "LOCAL", "entity": [1], "feature": 6},
+            destination={"device": "REMOTE", "entity": [1, 1], "feature": 11},
+            msg_counter=3,
+            function_name="measurementListData",
+        )
+        command = spine.extract_commands(datagram)[0]
+        self.assertNotIn("filter", command)
+        self.assertNotIn("function", command)
+        self.assertNotIn("ackRequest", spine.extract_header(datagram))
+
+    def test_partial_read_only_adds_an_explicit_selector(self) -> None:
         command = spine.extract_commands(
             spine.build_read_datagram(
                 source={"device": "LOCAL", "entity": [1], "feature": 6},
                 destination={"device": "REMOTE", "entity": [1, 1], "feature": 11},
-                msg_counter=3,
+                msg_counter=4,
                 function_name="measurementListData",
+                selectors={"measurementId": 1},
             )
         )[0]
-        self.assertNotIn("filter", command)
+        self.assertEqual(
+            command["filter"]["measurementListDataSelectors"],
+            {"measurementId": 1},
+        )
 
 
 class ShipHandshakeTests(unittest.IsolatedAsyncioTestCase):
@@ -255,6 +272,10 @@ class ShipHandshakeTests(unittest.IsolatedAsyncioTestCase):
             trust=trust_module.TrustStore(),
         )
         discovery = client.build_local_detailed_discovery()
+        self.assertEqual(
+            discovery["specificationVersionList"]["specificationVersion"],
+            ["1.2.0", "1.3.0"],
+        )
         feature_types = {
             (item["description"]["featureType"], item["description"]["role"])
             for item in discovery["featureInformation"]
@@ -293,6 +314,80 @@ class _RejectedReadSession(_MemorySession):
 
 
 class IncomingProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_subscription_call_requests_ack_without_function_field(self) -> None:
+        session = _MemorySession()
+        material = sdk_identity.IdentityMaterial(
+            ship_id="i:HA_u:TEST_r:CEM",
+            device_id="TEST",
+            common_name="TEST.cls",
+            ski="00" * 20,
+            cert_path="/tmp/no-cert",
+            key_path="/tmp/no-key",
+            qr_payload="",
+        )
+        client = client_module.HemsClient(
+            session=session,
+            service=discovery_module.ShipService(service_name="wallbox", port=4712),
+            identity=material,
+            trust=trust_module.TrustStore(),
+        )
+        client._remote_device_address = "REMOTE"
+        datagram = client._build_subscription_request_call(
+            client_address=client.local_measurement_client_address(),
+            server_address={"device": "REMOTE", "entity": [1, 1], "feature": 11},
+            server_feature_type="Measurement",
+        )
+        header = spine.extract_header(datagram)
+        command = spine.extract_commands(datagram)[0]
+        self.assertTrue(header["ackRequest"])
+        self.assertNotIn("function", command)
+        self.assertIn("nodeManagementSubscriptionRequestCall", command)
+
+    async def test_peer_spine_12_is_selected_for_follow_up_messages(self) -> None:
+        session = _MemorySession()
+        material = sdk_identity.IdentityMaterial(
+            ship_id="i:HA_u:TEST_r:CEM",
+            device_id="TEST",
+            common_name="TEST.cls",
+            ski="00" * 20,
+            cert_path="/tmp/no-cert",
+            key_path="/tmp/no-key",
+            qr_payload="",
+        )
+        client = client_module.HemsClient(
+            session=session,
+            service=discovery_module.ShipService(service_name="wallbox", port=4712),
+            identity=material,
+            trust=trust_module.TrustStore(),
+        )
+        discovery_reply = spine.build_datagram(
+            source={"device": "REMOTE", "entity": [0], "feature": 0},
+            destination=client.local_node_management_address(),
+            cmd_classifier="reply",
+            msg_counter=20,
+            msg_counter_reference=1,
+            specification_version="1.2.0",
+            commands=[
+                {
+                    "nodeManagementDetailedDiscoveryData": {
+                        "specificationVersionList": {
+                            "specificationVersion": ["1.2.0"]
+                        },
+                        "featureInformation": [],
+                    }
+                }
+            ],
+        )
+        await client.handle_incoming_datagram(discovery_reply)
+        self.assertEqual(client.specification_version, "1.2.0")
+        self.assertEqual(client.peer_specification_versions, ["1.2.0"])
+        self.assertTrue(
+            all(
+                spine.extract_header(message)["specificationVersion"] == "1.2.0"
+                for message in session.sent
+            )
+        )
+
     async def test_rejected_read_surfaces_correlated_spine_error(self) -> None:
         session = _RejectedReadSession()
         material = sdk_identity.IdentityMaterial(
@@ -347,7 +442,6 @@ class IncomingProtocolTests(unittest.IsolatedAsyncioTestCase):
             msg_counter=12,
             commands=[
                 {
-                    "function": "nodeManagementUseCaseData",
                     "nodeManagementUseCaseData": [],
                 }
             ],
@@ -360,7 +454,7 @@ class IncomingProtocolTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(len(replies), 1)
         command = spine.extract_commands(replies[0])[0]
-        self.assertEqual(command["function"], "nodeManagementUseCaseData")
+        self.assertNotIn("function", command)
         self.assertIn("nodeManagementUseCaseData", command)
 
 

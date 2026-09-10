@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 PROTOCOL_ID = "ee1.0"
 SPECIFICATION_VERSION = "1.3.0"
+SUPPORTED_SPECIFICATION_VERSIONS = ("1.2.0", "1.3.0")
 
 
 @dataclass(slots=True)
@@ -83,20 +84,8 @@ def build_datagram(
     header["cmdClassifier"] = cmd_classifier
     if ack_request is not None:
         header["ackRequest"] = ack_request
-    normalized_commands: list[dict[str, Any]] = []
-    for command in commands:
-        if "function" in command:
-            normalized_commands.append(command)
-            continue
-        function_name = next(
-            (key for key in command if key not in {"filter", "resultData"}),
-            "resultData" if "resultData" in command else None,
-        )
-        normalized_commands.append(
-            {"function": function_name, **command} if function_name else command
-        )
     return SpineDatagram(
-        payload={"datagram": {"header": header, "payload": {"cmd": normalized_commands}}}
+        payload={"datagram": {"header": header, "payload": {"cmd": commands}}}
     )
 
 
@@ -151,27 +140,18 @@ def build_read_datagram(
     selectors: dict[str, Any] | None = None,
     partial: bool = False,
     specification_version: str = SPECIFICATION_VERSION,
-    ack_request: bool | None = True,
+    ack_request: bool | None = None,
 ) -> SpineDatagram:
-    # ``function`` is mandatory in the SPINE command frame.  Some permissive
-    # peers infer it from the data element, but real EVSE implementations such
-    # as the Hager/Elli family expect both fields.
-    # CmdType is an ordered SPINE sequence: function, filter, function data.
-    # The EEBUS JSON encoding represents that sequence as an array, therefore
-    # dict insertion order here is protocol-significant.
-    command: dict[str, Any] = {"function": function_name}
+    # A complete SPINE read contains only the empty function-data structure.
+    # ``function`` is present only when a filter is used, because it tells the
+    # receiver which selector/elements type belongs to that filter.  CmdType is
+    # an ordered SPINE sequence, so insertion order is protocol-significant.
+    command: dict[str, Any] = {}
     if partial or selectors is not None:
-        # SPINE partial reads are expressed by a command filter.  The
-        # function's data element remains empty; putting selectors there is a
-        # different (and invalid) command shape.  An empty selector matches
-        # every list entry and is required by partial-only EVSE features.
+        command["function"] = function_name
         command_filter: dict[str, Any] = {"cmdControl": {"partial": {}}}
-        # ListData functions have generated *Selectors types in SPINE.  Empty
-        # selectors match the complete collection.  Scalar structures such as
-        # DeviceDiagnosisStateData do not define a selector type, so the
-        # cmdControl marker alone is the valid all-elements request.
-        if selectors is not None or function_name.endswith("ListData"):
-            command_filter[f"{function_name}Selectors"] = selectors or {}
+        if selectors is not None:
+            command_filter[f"{function_name}Selectors"] = selectors
         command["filter"] = command_filter
     command[function_name] = []
     return build_datagram(

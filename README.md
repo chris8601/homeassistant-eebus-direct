@@ -18,7 +18,7 @@ Die Integration zeigt nur Funktionen an, welche die Wallbox in ihrer SPINE-Gerä
 - Laden freigeben/pausieren über die OPEV-Stromvorgabe
 - PV-Stromempfehlung über OSCEV und Freigabe aller gesetzten Grenzwerte
 - Fahrzeug-SoC, SoH und Reichweite, falls Fahrzeug und ISO-15118-Verbindung diese Werte bereitstellen
-- Diagnose-Download mit Use Cases, Entitäten, Limits und Rohmesswerten; der private Schlüssel wird nie ausgegeben
+- Diagnose-Download mit Use Cases, Entitäten, Limits, Rohmesswerten und einer kompakten SPINE-Telegrammübersicht; der private Schlüssel wird nie ausgegeben
 - automatische Wiederverbindung und ein manueller „EEBUS neu verbinden“-Knopf
 
 Nicht über Standard-EEBUS bereitgestellte Herstellerfunktionen – etwa RFID-Verwaltung, Firmware-Updates oder die Installateurkonfiguration – sind nicht Teil dieser Integration. Eine Hardware-Phasenumschaltung wird ebenfalls nicht ausgelöst.
