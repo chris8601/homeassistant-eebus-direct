@@ -1,5 +1,13 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.7
+
+- Endlosschleife nach einem sofortigen Fehler im Kopplungsdialog verhindert
+- gespeichertes EEBUS-Zertifikat und privaten Schlüssel vor jeder Verwendung auf Übereinstimmung geprüft
+- beschädigte Identitätsdateien werden automatisch als atomar geschriebener Zertifikat-/Schlüsselsatz erneuert
+- parallele Identitätserzeugung durch Zeroconf-Erkennungen abgesichert
+- doppelte Zeroconf-Konfigurationsflüsse desselben SHIP-Geräts verhindert
+
 ## 0.1.0-beta.6
 
 - SPINE-Werte werden jetzt von allen relevanten EVSE- und EV-Features gelesen statt nur vom tiefsten EV-Feature
