@@ -41,8 +41,11 @@
     },
     "abort": {
       "already_configured": "This EEBUS device is already configured.",
+      "cannot_connect": "The EEBUS/TLS connection failed. Start the setup again after checking the network and pairing mode.",
       "invalid_discovery_info": "The discovered SHIP service contains no usable port.",
-      "interface_required": "The Home Assistant LAN interface could not be determined."
+      "interface_required": "The Home Assistant LAN interface could not be determined.",
+      "pairing_not_approved": "The wallbox did not approve the EEBUS connection. Start the setup again with pairing mode enabled.",
+      "ski_mismatch": "The entered wallbox SKI does not match its TLS certificate. Start the setup again with the correct SKI."
     }
   },
   "options": {
