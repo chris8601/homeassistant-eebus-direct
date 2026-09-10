@@ -173,6 +173,17 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("partial", wire_command["filter"]["cmdControl"])
         self.assertIn("measurementListDataSelectors", wire_command["filter"])
 
+        encoded_wire = json.loads(
+            json_codec.to_eebus_json_bytes(datagram.as_ship_payload()).decode()
+        )
+        encoded_command = encoded_wire["data"][1]["payload"]["datagram"][1][
+            "payload"
+        ][0]["cmd"][0]
+        self.assertEqual(
+            [next(iter(field)) for field in encoded_command],
+            ["function", "filter", "measurementListData"],
+        )
+
     def test_full_read_has_no_filter(self) -> None:
         command = spine.extract_commands(
             spine.build_read_datagram(
