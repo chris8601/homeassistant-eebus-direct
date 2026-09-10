@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 0.1.0-beta.11
+
+- von der Witty Flow angekündigte Partial-Reads werden wieder verwendet
+- SPINE-`filter` korrekt als Liste von `FilterType`-Einträgen codiert; dadurch entsteht die von SPINE 1.2 erwartete doppelte Array-Ebene auf dem Draht
+- dieselbe Filterkorrektur auf LoadControl-Schreibbefehle angewendet
+
 ## 0.1.0-beta.10
 
 - vollständige SPINE-Reads jetzt in der standardkonformen Wire-Form ohne zusätzliches `function`, `filter` oder `ackRequest`
