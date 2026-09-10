@@ -149,6 +149,41 @@ class ProtocolTests(unittest.TestCase):
         )
         self.assertIn("function", json.dumps(wire))
 
+    def test_partial_read_uses_spine_filter_and_empty_function_data(self) -> None:
+        datagram = spine.build_read_datagram(
+            source={"device": "LOCAL", "entity": [1], "feature": 6},
+            destination={"device": "REMOTE", "entity": [1, 1], "feature": 11},
+            msg_counter=2,
+            function_name="measurementListData",
+            partial=True,
+        )
+        command = spine.extract_commands(datagram)[0]
+        self.assertEqual(command["measurementListData"], [])
+        self.assertEqual(
+            command["filter"],
+            {
+                "cmdControl": {"partial": {}},
+                "measurementListDataSelectors": {},
+            },
+        )
+        decoded_wire = json_codec.from_eebus_json_bytes(
+            json_codec.to_eebus_json_bytes(datagram.as_ship_payload())
+        )
+        wire_command = decoded_wire["data"]["payload"]["datagram"]["payload"]["cmd"][0]
+        self.assertIn("partial", wire_command["filter"]["cmdControl"])
+        self.assertIn("measurementListDataSelectors", wire_command["filter"])
+
+    def test_full_read_has_no_filter(self) -> None:
+        command = spine.extract_commands(
+            spine.build_read_datagram(
+                source={"device": "LOCAL", "entity": [1], "feature": 6},
+                destination={"device": "REMOTE", "entity": [1, 1], "feature": 11},
+                msg_counter=3,
+                function_name="measurementListData",
+            )
+        )[0]
+        self.assertNotIn("filter", command)
+
 
 class ShipHandshakeTests(unittest.IsolatedAsyncioTestCase):
     async def test_access_exchange_uses_only_standard_ship_messages(self) -> None:
@@ -235,7 +270,48 @@ class _MemorySession:
         self.sent.append(datagram)
 
 
+class _RejectedReadSession(_MemorySession):
+    async def receive_datagram(self, *, timeout=None):
+        return spine.build_result_datagram(
+            self.sent[-1],
+            source={"device": "REMOTE", "entity": [1, 1], "feature": 11},
+            msg_counter=99,
+            error_number=5,
+            description="read rejected",
+        )
+
+
 class IncomingProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_rejected_read_surfaces_correlated_spine_error(self) -> None:
+        session = _RejectedReadSession()
+        material = sdk_identity.IdentityMaterial(
+            ship_id="i:HA_u:TEST_r:CEM",
+            device_id="TEST",
+            common_name="TEST.cls",
+            ski="00" * 20,
+            cert_path="/tmp/no-cert",
+            key_path="/tmp/no-key",
+            qr_payload="",
+        )
+        client = client_module.HemsClient(
+            session=session,
+            service=discovery_module.ShipService(service_name="wallbox", port=4712),
+            identity=material,
+            trust=trust_module.TrustStore(),
+        )
+
+        with self.assertRaisesRegex(
+            client_module.SpineResultError, "SPINE error 5: read rejected"
+        ):
+            await client._request_function_data(
+                source={"device": "LOCAL", "entity": [1], "feature": 6},
+                destination={"device": "REMOTE", "entity": [1, 1], "feature": 11},
+                function_name="measurementListData",
+                extractor=lambda datagram: [],
+                timeout=0.1,
+                partial=True,
+            )
+
     async def test_real_command_shape_receives_use_case_reply(self) -> None:
         material = sdk_identity.IdentityMaterial(
             ship_id="i:HA_u:TEST_r:CEM",
