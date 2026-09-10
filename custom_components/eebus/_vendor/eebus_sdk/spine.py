@@ -156,10 +156,10 @@ def build_read_datagram(
     # ``function`` is mandatory in the SPINE command frame.  Some permissive
     # peers infer it from the data element, but real EVSE implementations such
     # as the Hager/Elli family expect both fields.
-    command: dict[str, Any] = {
-        "function": function_name,
-        function_name: [],
-    }
+    # CmdType is an ordered SPINE sequence: function, filter, function data.
+    # The EEBUS JSON encoding represents that sequence as an array, therefore
+    # dict insertion order here is protocol-significant.
+    command: dict[str, Any] = {"function": function_name}
     if partial or selectors is not None:
         # SPINE partial reads are expressed by a command filter.  The
         # function's data element remains empty; putting selectors there is a
@@ -173,6 +173,7 @@ def build_read_datagram(
         if selectors is not None or function_name.endswith("ListData"):
             command_filter[f"{function_name}Selectors"] = selectors or {}
         command["filter"] = command_filter
+    command[function_name] = []
     return build_datagram(
         source=source,
         destination=destination,
