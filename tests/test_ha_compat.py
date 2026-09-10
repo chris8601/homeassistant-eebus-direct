@@ -38,6 +38,15 @@ class HomeAssistantCompatibilityTests(unittest.TestCase):
         self.assertNotIn("): _validate_interface", source)
         self.assertIn("): str", source)
 
+    def test_pairing_failure_does_not_return_to_pairing_step(self) -> None:
+        source = ROOT.joinpath("custom_components/eebus/config_flow.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn('async_show_progress_done(next_step_id="pair")', source)
+        self.assertIn('async_show_progress_done(next_step_id="pair_failed")', source)
+        self.assertIn("async_step_pair_failed", source)
+
 
 if __name__ == "__main__":
     unittest.main()
