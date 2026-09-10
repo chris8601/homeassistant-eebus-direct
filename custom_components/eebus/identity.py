@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 from cryptography import x509
@@ -17,6 +19,9 @@ from ._vendor.eebus_sdk.identity import (
     IdentityMaterial,
     build_qr_payload,
 )
+
+_LOGGER = logging.getLogger(__name__)
+_IDENTITY_LOCK = Lock()
 
 
 def normalize_peer_ski(value: str) -> str:
@@ -36,16 +41,43 @@ def _load_identity(path: Path) -> IdentityMaterial:
     identity = IdentityMaterial(**data)
     if not Path(identity.cert_path).is_file() or not Path(identity.key_path).is_file():
         raise FileNotFoundError("EEBUS identity certificate or key is missing")
+    certificate = x509.load_pem_x509_certificate(
+        Path(identity.cert_path).read_bytes()
+    )
+    private_key = serialization.load_pem_private_key(
+        Path(identity.key_path).read_bytes(), password=None
+    )
+    certificate_public_key = certificate.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    private_public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    if certificate_public_key != private_public_key:
+        raise ValueError("EEBUS certificate and private key do not match")
+    certificate_ski = certificate.extensions.get_extension_for_class(
+        x509.SubjectKeyIdentifier
+    ).value.digest.hex()
+    if identity.ski.lower() != certificate_ski:
+        raise ValueError("Stored EEBUS SKI does not match the certificate")
     return identity
 
 
-def create_or_load_identity(config_dir: str) -> tuple[IdentityMaterial, str]:
-    """Create one stable EEBUS CEM identity for this HA installation."""
-    directory = Path(config_dir).joinpath(".storage", "eebus_direct").resolve()
-    identity_path = directory / "identity.json"
-    if identity_path.exists():
-        return _load_identity(identity_path), str(identity_path)
+def _atomic_write(path: Path, content: bytes, mode: int = 0o600) -> None:
+    """Write one identity file without exposing a partially written version."""
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(content)
+        temporary.chmod(mode)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
+
+def _create_identity(directory: Path, identity_path: Path) -> IdentityMaterial:
+    """Generate and atomically store one matching certificate/key pair."""
     directory.mkdir(parents=True, exist_ok=True)
     device_id = f"HA-{uuid4().hex[:16].upper()}"
     ship_id = f"i:HA_u:{device_id}_r:CEM"
@@ -105,15 +137,14 @@ def create_or_load_identity(config_dir: str) -> tuple[IdentityMaterial, str]:
 
     key_path = directory / "client.key.pem"
     cert_path = directory / "client.crt.pem"
-    key_path.write_bytes(
-        key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
+    key_bytes = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
     )
-    key_path.chmod(0o600)
-    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    certificate_bytes = certificate.public_bytes(serialization.Encoding.PEM)
+    _atomic_write(key_path, key_bytes)
+    _atomic_write(cert_path, certificate_bytes)
 
     identity = IdentityMaterial(
         ship_id=ship_id,
@@ -130,13 +161,41 @@ def create_or_load_identity(config_dir: str) -> tuple[IdentityMaterial, str]:
             device_type="EnergyManagementSystem",
         ),
     )
-    identity_path.write_text(
-        json.dumps(identity.as_dict(), indent=2, sort_keys=True), encoding="utf-8"
+    _atomic_write(
+        identity_path,
+        json.dumps(identity.as_dict(), indent=2, sort_keys=True).encode("utf-8"),
     )
-    identity_path.chmod(0o600)
+    return identity
+
+
+def _load_or_repair_identity(identity_path: Path) -> IdentityMaterial:
+    if identity_path.exists():
+        try:
+            return _load_identity(identity_path)
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            x509.ExtensionNotFound,
+        ) as exc:
+            _LOGGER.warning(
+                "Stored EEBUS identity is invalid and will be regenerated: %s", exc
+            )
+    return _create_identity(identity_path.parent, identity_path)
+
+
+def create_or_load_identity(config_dir: str) -> tuple[IdentityMaterial, str]:
+    """Create one stable, validated EEBUS CEM identity for this HA installation."""
+    directory = Path(config_dir).joinpath(".storage", "eebus_direct").resolve()
+    identity_path = directory / "identity.json"
+    with _IDENTITY_LOCK:
+        identity = _load_or_repair_identity(identity_path)
     return identity, str(identity_path)
 
 
 def load_identity(path: str) -> IdentityMaterial:
-    """Load identity material stored by :func:`create_or_load_identity`."""
-    return _load_identity(Path(path).resolve())
+    """Load and, if necessary, repair stored identity material."""
+    identity_path = Path(path).resolve()
+    with _IDENTITY_LOCK:
+        return _load_or_repair_identity(identity_path)
