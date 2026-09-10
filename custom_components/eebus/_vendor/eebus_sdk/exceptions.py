@@ -43,3 +43,15 @@ class PairingRejectedError(ShipHandshakeError):
 
 class ReplayError(EebusError):
     """Raised when a recorded trace cannot be parsed or validated."""
+
+
+class SpineResultError(EebusError):
+    """Raised when a peer rejects a SPINE command with ``resultData``."""
+
+    def __init__(self, error_number: int, description: str | None = None) -> None:
+        self.error_number = error_number
+        self.description = description
+        detail = f"SPINE error {error_number}"
+        if description:
+            detail = f"{detail}: {description}"
+        super().__init__(detail)
