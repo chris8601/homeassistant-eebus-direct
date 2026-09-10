@@ -15,6 +15,7 @@ from ._vendor.eebus_sdk import (
     EebusError,
     HemsClient,
     ShipService,
+    SpineResultError,
     TrustStore,
     discover_ship_services,
 )
@@ -41,6 +42,7 @@ from .model import (
     decode_measurements,
     decode_use_cases,
     entity_types,
+    feature_requires_partial_read,
     find_features,
     preferred_ev_entity,
 )
@@ -114,6 +116,7 @@ class EebusRuntime:
         self._static_attempts = 0
         self._static: dict[str, Any] = {}
         self._dynamic: dict[str, Any] = {}
+        self._read_errors: dict[str, dict[str, Any]] = {}
         self._target_current_a: float | None = None
         self._target_phase_a: dict[str, float] = {}
         self._solar_current_a: float | None = None
@@ -297,9 +300,25 @@ class EebusRuntime:
                     function_name=function_name,
                     extractor=extractor,
                     timeout=timeout,
+                    partial=feature_requires_partial_read(feature, function_name),
                 )
+            except SpineResultError as exc:
+                self._read_errors[function_name] = {
+                    "error_number": exc.error_number,
+                    "description": exc.description,
+                    "destination": destination,
+                }
+                _LOGGER.debug(
+                    "Wallbox rejected %s read for %s: %s",
+                    function_name,
+                    destination,
+                    exc,
+                )
+                continue
             except asyncio.TimeoutError:
                 continue
+            if payloads:
+                self._read_errors.pop(function_name, None)
             collected.extend(payloads)
         return collected or None
 
@@ -600,6 +619,7 @@ class EebusRuntime:
             "static_reads": self._static,
             "dynamic_reads": self._dynamic,
             "static_read_attempts": self._static_attempts,
+            "read_errors": self._read_errors,
         }
 
     async def async_update(self) -> dict[str, Any]:
