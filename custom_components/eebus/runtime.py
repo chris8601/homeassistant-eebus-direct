@@ -42,6 +42,7 @@ from .model import (
     decode_measurements,
     decode_use_cases,
     entity_types,
+    feature_supports_partial_read,
     find_features,
     preferred_ev_entity,
 )
@@ -296,6 +297,7 @@ class EebusRuntime:
         seen: set[tuple[Any, ...]] = set()
         for feature in candidates:
             destination = feature["address"]
+            partial_read = feature_supports_partial_read(feature, function_name)
             address_key = (
                 destination.get("device"),
                 tuple(destination.get("entity") or []),
@@ -306,7 +308,7 @@ class EebusRuntime:
             seen.add(address_key)
             attempt: dict[str, Any] = {
                 "destination": destination,
-                "mode": "full",
+                "mode": "partial" if partial_read else "full",
             }
             try:
                 payloads = await client._request_function_data(
@@ -315,7 +317,7 @@ class EebusRuntime:
                     function_name=function_name,
                     extractor=extractor,
                     timeout=timeout,
-                    partial=False,
+                    partial=partial_read,
                 )
             except SpineResultError as exc:
                 attempt.update(
@@ -781,7 +783,7 @@ class EebusRuntime:
             commands=[
                 {
                     "function": "loadControlLimitListData",
-                    "filter": {"cmdControl": {"partial": {}}},
+                    "filter": [{"cmdControl": {"partial": {}}}],
                     "loadControlLimitListData": {"loadControlLimitData": data},
                 }
             ],
